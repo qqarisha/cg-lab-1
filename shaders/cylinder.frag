@@ -1,3 +1,4 @@
+
 #version 450
 
 layout(set = 0, binding = 0, std140) uniform SceneBlock {
@@ -16,11 +17,17 @@ layout(set = 1, binding = 0, std140) uniform ModelBlock {
     vec4 material_params;
 } model_data;
 
+layout(set = 1, binding = 1) uniform sampler2D cylinder_texture;
+layout(set = 1, binding = 2) uniform sampler2D specular_texture;
+layout(set = 1, binding = 3) uniform sampler2D emissive_texture;
+
 layout(push_constant) uniform DrawPushConstants {
     mat4 model;
     vec4 color;
     uvec4 options;
 } draw_data;
+
+layout(location = 3) in vec2 fragTexCoord;
 
 struct PointLight {
     vec4 position;
@@ -76,7 +83,6 @@ vec3 calculateBlinnPhong(
 
 void main()
 {
-    // Индикаторы источников рисуются без модели освещения.
     if (draw_data.options.x == 1u) {
         outColor = vec4(
             draw_data.color.rgb * fragVertexColor,
@@ -91,11 +97,56 @@ void main()
         scene.camera_position.xyz - fragWorldPosition
     );
 
+    vec4 texture_color = texture(cylinder_texture, fragTexCoord);
+
+    if (draw_data.options.y == 1u) {
+        float time = draw_data.color.a;
+
+        vec2 offset_a = vec2(
+            sin(time * 0.8),
+            cos(time * 0.8)
+        ) * 0.08;
+
+        vec2 coords_a = fragTexCoord + offset_a;
+
+        vec2 coords_b =
+            vec2(fragTexCoord.y, fragTexCoord.x) * 1.35
+            + vec2(time * 0.04, -time * 0.06);
+
+        vec3 sample_a = texture(
+            cylinder_texture,
+            coords_a
+        ).rgb;
+
+        vec3 sample_b = texture(
+            cylinder_texture,
+            coords_b
+        ).rgb;
+
+        vec3 combined_samples =
+            (sample_a + sample_b) * 0.5;
+
+        float modulation = 0.85 + 0.15 * sin(
+            (fragTexCoord.x + fragTexCoord.y) * 16.0
+            + time * 2.0
+        );
+
+        texture_color.rgb *=
+            mix(vec3(1.0), combined_samples, 0.45)
+            * modulation;
+    }
+
     vec3 albedo =
-        fragVertexColor * model_data.albedo.rgb;
+        texture_color.rgb * model_data.albedo.rgb;
+
+    float specular_mask =
+        texture(specular_texture, fragTexCoord).r;
 
     vec3 specular_color =
-        model_data.specular_color.rgb;
+        model_data.specular_color.rgb * specular_mask;
+
+    vec3 emissive_color =
+        texture(emissive_texture, fragTexCoord).rgb;
 
     float shininess =
         max(model_data.material_params.x, 1.0);
@@ -105,7 +156,6 @@ void main()
         * scene.ambient_color_strength.a
         * albedo;
 
-    // Направленный свет.
     vec3 direction = scene.directional_direction.xyz;
 
     if (length(direction) > 0.0001) {
@@ -121,7 +171,6 @@ void main()
         );
     }
 
-    // Точечные источники.
     for (uint i = 0; i < scene.light_counts.x; ++i) {
         PointLight light = point_buffer.lights[i];
 
@@ -144,7 +193,6 @@ void main()
         );
     }
 
-    // Прожекторы с мягкими границами.
     for (uint i = 0; i < scene.light_counts.y; ++i) {
         SpotLight light = spot_buffer.lights[i];
 
@@ -182,5 +230,10 @@ void main()
         );
     }
 
-    outColor = vec4(result, model_data.albedo.a);
+    result += emissive_color * 2.0;
+
+    outColor = vec4(
+        result,
+        texture_color.a * model_data.albedo.a
+    );
 }

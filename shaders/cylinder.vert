@@ -4,6 +4,9 @@ layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec3 inColor;
 
+layout(location = 3) in vec2 inTexCoord;
+layout(location = 3) out vec2 fragTexCoord;
+
 layout(set = 0, binding = 0, std140) uniform SceneBlock {
     mat4 view_projection;
     vec4 camera_position;
@@ -32,6 +35,8 @@ layout(location = 2) out vec3 fragVertexColor;
 
 void main()
 {
+    fragTexCoord = inTexCoord;
+    
     mat4 model_matrix =
         draw_data.options.x == 1u
         ? draw_data.model
